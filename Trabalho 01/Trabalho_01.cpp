@@ -1,0 +1,179 @@
+#include <iostream>
+#include <cmath>
+#include <vector>
+#include <GL/glut.h>
+
+#include "Collision.h"
+#include "Auxiliares.h"
+
+/**
+    Referencias:
+    http://www.emathzone.com/tutorials/math-results-and-formulas/equations-of-tangent-and-normal-to-a-ellipse.html
+    https://en.wikipedia.org/wiki/Rotation_matrix
+    https://www.physicsforums.com/threads/unit-vectors-for-ellipse.324153/
+    https://www.algebra.com/algebra/homework/Quadratic-relations-and-conic-sections/Tangent-lines-to-an-ellipse.lesson
+    https://www.experts-exchange.com/questions/23733731/OpenGL-Timer-Function.html
+    http://cboard.cprogramming.com/c-programming/90175-how-build-timer-counts-seconds-elapsed.html
+*/
+
+using namespace std;
+
+float screenWidth = 0;
+float screenHeight = 0;
+float windowSizeX = 680, windowSizeY = 680;
+float ortho[6] = {-1.0, 1.0, -1.0, 1.0, -1.0, 1.0};
+float background[4] = {1.0,1.0,1.0,0.0};
+
+int lado = 1;
+
+float fator_vel = 0.02;
+float tolerancia = 0.0001;
+
+float circ_x      = 0;
+float circ_y      = 0;
+float circ_raio   = 0.1;
+float circ_vetX   = -0.8;
+float circ_vetY   = -1;
+float circ_rgb[3] = {1,0,0};
+
+float eli_1_x          = 0.3;
+float eli_1_y          = -1;
+float eli_1_raio_menor = 0.2;
+float eli_1_raio_maior = 0.5;
+float eli_1_prec       = 0.1;
+float eli_1_velocity   = 0;
+float eli_1_rgb[3]     = {0.102,0.580,0.192};
+
+float eli_2_x          = 0;
+float eli_2_y          = 1;
+float eli_2_raio_menor = 0.2;
+float eli_2_raio_maior = 0.5;
+float eli_2_prec       = 0.1;
+float eli_2_velocity   = 0;
+float eli_2_rgb[3]     = {0.031,0.376,0.659};
+
+void desenhaElipse(Elipse *eli);
+void desenhaCirculo(Circulo *circ);
+void display(void);
+void init (void);
+void idle();
+void mouse(int button, int state, int x, int y);
+void mousePassive(int x, int y);
+void keyboard(unsigned char key, int x, int y);
+
+Circulo *circ;
+Elipse *bumper1, *bumper2;
+
+int main(int argc, char** argv){
+
+    circ = new Circulo(circ_x,circ_y,circ_raio,circ_vetX,circ_vetY,circ_rgb[0],circ_rgb[1],circ_rgb[2]);
+    bumper1 = new Elipse(eli_1_x,eli_1_y,eli_1_raio_menor,eli_1_raio_maior,eli_1_prec,eli_1_velocity,eli_1_rgb[0],eli_1_rgb[1],eli_1_rgb[2]);
+    bumper2 = new Elipse(eli_2_x,eli_2_y,eli_2_raio_menor,eli_2_raio_maior,eli_2_prec,eli_2_velocity,eli_2_rgb[0],eli_2_rgb[1],eli_2_rgb[2]);
+
+    glutInit(&argc, argv);
+    glutInitDisplayMode (GLUT_DOUBLE|GLUT_DEPTH|GLUT_RGB);
+    glutInitWindowSize (windowSizeX, windowSizeY);
+    glutInitWindowPosition (100, 100);
+    glutCreateWindow ("Pong");
+    glutMouseFunc( mouse );
+    glutPassiveMotionFunc( mousePassive );
+    glutKeyboardFunc( keyboard );
+    glutIdleFunc( idle);
+    init ();
+
+    glutFullScreen();
+    glutSetCursor(GLUT_CURSOR_NONE);
+
+    glutDisplayFunc(display);
+    glutMainLoop();
+
+    return 0;
+}
+
+void idle(){
+    //fator_vel += 0.00001;
+
+    circ->x += circ->vetX*fator_vel/norma(circ->vetX,circ->vetY);
+    circ->y += circ->vetY*fator_vel/norma(circ->vetX,circ->vetY);
+
+    wall_collision(circ,ortho,lado);
+    if(circ->y <= bumper1->raio_menor+bumper1->raio_menor or circ->y >= bumper2->raio_menor+bumper2->raio_menor){
+        if(lado == 1)
+            bumper_collision_1(circ,bumper1,tolerancia,lado);
+        else
+            bumper_collision_2(circ,bumper2,tolerancia,lado);
+    }
+
+    glutPostRedisplay();
+}
+
+void desenhaElipse(Elipse *eli){
+    glColor3f(eli->r,eli->g,eli->b);
+    glBegin(GL_POLYGON);
+        for(float theta = 0; theta < 2*M_PI; theta+=eli->prec)
+            glVertex2f(eli->raio_maior*cos(theta) + eli->x, eli->raio_menor*sin(theta) + eli->y);
+    glEnd();
+}
+
+void desenhaCirculo(Circulo *circ){
+    glColor3f(circ->r,circ->g,circ->b);
+    glBegin(GL_POLYGON);
+        for(float theta = 0; theta < 2*M_PI; theta+=0.1)
+            glVertex2f(circ->raio*cos(theta)+circ->x,circ->raio*sin(theta)+circ->y);
+    glEnd();
+}
+
+void display(void){
+    // Limpar todos os pixels
+    glClear (GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+
+    desenhaElipse(bumper1);
+    desenhaElipse(bumper2);
+    desenhaCirculo(circ);
+
+    glutSwapBuffers ();
+}
+
+void init (void)
+{
+   // selecionar cor de fundo (preto)
+   glClearColor (background[0],background[1],background[2],background[3]);
+
+   screenWidth = glutGet(GLUT_SCREEN_WIDTH);
+   screenHeight = glutGet(GLUT_SCREEN_HEIGHT);
+
+   ortho[0] = -1.0*screenWidth/screenHeight;
+   ortho[1] =  1.0*screenWidth/screenHeight;
+
+   // inicializar sistema de viz.
+   glMatrixMode(GL_PROJECTION);
+   glLoadIdentity();
+   glOrtho(ortho[0],ortho[1],ortho[2],ortho[3],ortho[4],ortho[5]);
+
+   glMatrixMode(GL_MODELVIEW);
+   glLoadIdentity();
+}
+
+// Mouse callback
+void mouse(int button, int state, int x, int y){
+}
+
+void mousePassive(int x, int y){
+    bumper1->x = x*(ortho[1]-ortho[0])/screenWidth+ortho[0];
+}
+
+void keyboard(unsigned char key, int x, int y){
+    switch (key){
+        case 97:
+            if(bumper2->x-0.1 <= ortho[0]) bumper2->x = ortho[0];
+            else bumper2->x -= 0.1;
+            break;
+        case 100:
+            if(bumper2->x+0.1 >= ortho[1]) bumper2->x = ortho[1];
+            else bumper2->x += 0.1;
+            break;
+        case 27:
+            exit(0);
+        break;
+    }
+}
